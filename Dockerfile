@@ -27,7 +27,7 @@ COPY test_*.py ./
 RUN env -u REVIEWER_CONFIG -u REVIEWER_DATA_DIR python3 -B -m unittest discover -q
 
 FROM runtime AS release
-ARG VERSION=0.1.0
+ARG VERSION=0.1.1
 LABEL org.opencontainers.image.title="PR Reviewer" \
       org.opencontainers.image.description="Configurable GitHub PR reviews with bounded AI file tools" \
       org.opencontainers.image.version="${VERSION}" \

@@ -13,14 +13,14 @@ Download the installation files from the public release:
 ```sh
 mkdir pr-reviewer-local
 cd pr-reviewer-local
-curl -fsSLO https://raw.githubusercontent.com/Johnndelembi/pr-reviewer-local/v0.1.0/compose.yaml
-curl -fsSLO https://raw.githubusercontent.com/Johnndelembi/pr-reviewer-local/v0.1.0/.env.example
+curl -fsSLO https://raw.githubusercontent.com/Johnndelembi/pr-reviewer-local/v0.1.1/compose.yaml
+curl -fsSLO https://raw.githubusercontent.com/Johnndelembi/pr-reviewer-local/v0.1.1/.env.example
 cp .env.example .env
 mkdir -p config data
 docker compose pull
 ```
 
-The image is `ghcr.io/johnndelembi/pr-reviewer-local:0.1.0`. Source code is not needed to run it. For a local source build, run `docker build -t pr-reviewer:local .` in the source directory and set `REVIEWER_IMAGE=pr-reviewer:local` in `.env` before using Compose.
+The image is `johnndelembi/pr-reviewer-local:0.1.1`. Source code is not needed to run it. For a local source build, run `docker build -t pr-reviewer:local .` in the source directory and set `REVIEWER_IMAGE=pr-reviewer:local` in `.env` before using Compose.
 
 Initialize your configuration (substitute your GitHub user and repositories):
 
@@ -42,7 +42,7 @@ Put credentials in `.env`:
 ```dotenv
 GH_TOKEN=your-scoped-github-token
 AI_API_KEY=your-selected-provider-api-key
-REVIEWER_IMAGE=ghcr.io/johnndelembi/pr-reviewer-local:0.1.0
+REVIEWER_IMAGE=johnndelembi/pr-reviewer-local:0.1.1
 ```
 
 Keep `.env` private and out of Git (`chmod 600 .env` on Unix). The GitHub token must belong to the configured `user`. Use a fine-grained personal access token limited to the repositories in the allowlist, with metadata/contents read access, pull requests read/write for reviews, and issue-comment read access. Auto-fix additionally needs contents write and issue-comment write. Organization policies may require token approval. GitHub App installation tokens and enterprise hosts are not supported in this version.
@@ -199,23 +199,18 @@ make build
 
 The test image runs the existing reviewer/fixer policy suite plus provider protocol, output-schema, path-boundary, credential-redirect and portable configuration tests. Tests use synthetic source and mocked provider responses; they do not post to GitHub or call paid models.
 
-To publish manually to GHCR:
-
-```sh
-docker login ghcr.io
-make publish REGISTRY_IMAGE=ghcr.io/johnndelembi/pr-reviewer-local VERSION=0.1.0
-```
-
-To publish to Docker Hub instead:
+To publish manually to Docker Hub:
 
 ```sh
 docker login
-make publish REGISTRY_IMAGE=YOUR-DOCKERHUB-ACCOUNT/pr-reviewer VERSION=0.1.0
+make publish REGISTRY_IMAGE=johnndelembi/pr-reviewer-local VERSION=0.1.1
 ```
+
+To use GHCR or another registry, log in to that registry and pass its image name through `REGISTRY_IMAGE`.
 
 `make publish` builds and pushes Linux AMD64 and ARM64 manifests. Buildx/QEMU support must be available. The `Dockerfile` copies only explicit runtime files, includes the MIT license and runs as a non-root user. Build context and Git ignore rules exclude installation secrets and runtime state. Python dependencies are pinned, but base images and OS packages are not a fully reproducible lock; use release image digests when deploying a published build.
 
-The included GitHub Actions workflow tests PRs and `main`, then publishes to `ghcr.io/<lowercase-owner>/<repository>` when you push a version tag such as `v0.1.0`. It uses the repository's built-in token with package-write permission only in the release job. For your own fork, enable Actions and push a version tag. The first GHCR package may be private: make the package public in its package settings if you want anonymous `docker pull`.
+The included GitHub Actions workflow tests PRs and `main`, then publishes to Docker Hub when you push a version tag such as `v0.1.1`. For automated publication, create the repository secret `DOCKERHUB_TOKEN` with a Docker Hub access token limited to image pushes. Set repository variable `DOCKERHUB_USERNAME` to your Docker Hub username; optionally set `DOCKERHUB_IMAGE` to `namespace/repository`. It defaults to the lowercase GitHub owner/repository. GitHub Actions must be available on the account. Manual `make publish` runs locally and does not depend on Actions.
 
 After release, distribute `compose.yaml`, `.env.example` and this guide. Consumers can pull the image, run `init`, configure their own account/provider/skills, preview and enable it. Back up `config/` and `data/`; upgrades replace the image, not those directories. Keep version tags or digests pinned when upgrading. External services and live provider/model capability still need verification in each installation.
 

@@ -1,6 +1,6 @@
 services:
   setup:
-    image: ${REVIEWER_IMAGE:-ghcr.io/johnndelembi/pr-reviewer-local:0.1.0}
+    image: ${REVIEWER_IMAGE:-johnndelembi/pr-reviewer-local:0.1.1}
     profiles: [setup]
     command: [init]
     network_mode: none
@@ -11,7 +11,7 @@ services:
     volumes:
       - ./config:/config
   reviewer:
-    image: ${REVIEWER_IMAGE:-ghcr.io/johnndelembi/pr-reviewer-local:0.1.0}
+    image: ${REVIEWER_IMAGE:-johnndelembi/pr-reviewer-local:0.1.1}
     build: .
     init: true
     restart: unless-stopped

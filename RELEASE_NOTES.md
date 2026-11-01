@@ -1,4 +1,4 @@
-# 0.1.1 — portable Docker distribution
+# 0.1.2 — portable Docker distribution
 
 The reviewer can now run independently of the original Mac installation. Repositories, skills, AI provider/model, schedule, signatures and optional integrations are configured per installation. Configuration and review state live outside the image.
 
@@ -9,6 +9,8 @@ The existing GitHub allowlist, revision freshness checks, consolidated finding p
 Installation provides a network-free setup service, configuration doctor, preview commands, persistent state and Compose controls. Publication provides a multi-platform Docker Hub release workflow and manual registry commands. The default skill is original generic guidance; personal or paid plugin skills and credentials are excluded. Source is distributed under the included MIT license.
 
 Verified: 283 tests in Linux ARM64, synthetic HTTP review/fix tool roundtrips, real disposable Docker validation stages with cleanup, fresh setup/doctor, state persistence across containers, Compose parsing and non-root/private-state exclusion checks. See release-checks.json for the local image ID.
+
+Debian package downloads use HTTPS with bounded retries during source builds.
 
 Publication targets `docker.io/johnndelembi/pr-reviewer-local`. This release updates the install files from the initial unpublished GHCR target. Publication is performed locally because GitHub Actions was blocked by an account billing lock. The workflow supports future Docker Hub releases after account access and `DOCKERHUB_TOKEN` are configured.
 

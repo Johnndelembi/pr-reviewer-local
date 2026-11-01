@@ -1,7 +1,9 @@
 ARG PYTHON_IMAGE=python:3.12-slim-trixie
 FROM ${PYTHON_IMAGE} AS runtime
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates git gh docker-cli \
+# Use HTTPS with bounded retries for public package downloads.
+RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get -o Acquire::Retries=3 -o Acquire::https::Timeout=30 update \
+    && apt-get -o Acquire::Retries=3 -o Acquire::https::Timeout=30 install -y --no-install-recommends ca-certificates git gh docker-cli \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --uid 1000 --create-home reviewer \
     && mkdir /app /data /config \
@@ -27,7 +29,7 @@ COPY test_*.py ./
 RUN env -u REVIEWER_CONFIG -u REVIEWER_DATA_DIR python3 -B -m unittest discover -q
 
 FROM runtime AS release
-ARG VERSION=0.1.1
+ARG VERSION=0.1.2
 LABEL org.opencontainers.image.title="PR Reviewer" \
       org.opencontainers.image.description="Configurable GitHub PR reviews with bounded AI file tools" \
       org.opencontainers.image.version="${VERSION}" \

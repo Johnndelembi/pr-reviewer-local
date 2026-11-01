@@ -1,0 +1,43 @@
+{
+  "user": "YOUR_GITHUB_USERNAME",
+  "display_name": "PR Review Agent",
+  "repositories": ["your-org/your-repository"],
+  "context_repositories": [],
+  "publish_reviews": false,
+  "model": "gpt-6.1-sol",
+  "reasoning": "high",
+  "ai": {
+    "provider": "openai",
+    "api_key_env": "AI_API_KEY",
+    "max_turns": 80,
+    "max_tokens": 16000,
+    "timeout_seconds": 120,
+    "job_timeout_seconds": 1800
+  },
+  "skill_files": ["/config/skills/review.md"],
+  "schedule": {"timezone": "UTC", "interval_minutes": 10},
+  "draft_at_round_six": false,
+  "validation": {
+    "enabled": false,
+    "docker": "docker",
+    "docker_context": "default",
+    "input_transport": "archive",
+    "node_image": "pr-reviewer-node:1",
+    "python_image": "pr-reviewer-python:1",
+    "timeout_seconds": 600,
+    "job_timeout_seconds": 1200,
+    "total_timeout_seconds": 1800,
+    "output_limit_bytes": 1000000,
+    "max_targets": 4,
+    "retry_seconds": 3600,
+    "workspace_dependencies": {}
+  },
+  "autofix": {
+    "enabled": false,
+    "max_requests_per_poll": 1,
+    "retry_seconds": 3600,
+    "commit_email": "YOUR_GITHUB_USERNAME@users.noreply.github.com",
+    "skill_files": ["/config/skills/review.md"]
+  },
+  "sms_notifications": {"enabled": false}
+}

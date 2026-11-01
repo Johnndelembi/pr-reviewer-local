@@ -1,0 +1,32 @@
+{
+  "version": "0.1.0",
+  "verified_date": "2026-11-01",
+  "image": {
+    "tag": "pr-reviewer:local",
+    "id": "sha256:000508e2da4f92521d0f4257cf51b748a70b1887a4cfffc65cc1839691393bb6",
+    "architecture": "arm64",
+    "os": "linux",
+    "size": 445361780
+  },
+  "checks": {
+    "linux_arm64_unit_tests": {
+      "status": "passed",
+      "count": 283
+    },
+    "synthetic_http_provider_review_and_autofix": "passed",
+    "containerized_validation_archive_transport": "passed",
+    "validation_cleanup": "passed",
+    "fresh_compose_initialization_and_doctor": "passed",
+    "state_persistence_between_containers": "passed",
+    "default_and_validation_compose_syntax": "passed",
+    "release_image_non_root_and_private_state_exclusion": "passed"
+  },
+  "limits": {
+    "live_paid_provider_calls": "not performed; provider protocols tested with synthetic responses",
+    "amd64_test_image": "blocked: Docker Hub base-image metadata fetch timed out",
+    "registry_publication": "not performed during this local verification; see the tagged GitHub Actions run",
+    "local_build_base_override": "python:3.12-slim; inspected as Debian 13 trixie",
+    "live_github_pr_reviews_or_fixes": "not performed"
+  },
+  "verification_scope": "Local pre-publication snapshot; subsequent GitHub Actions runs record release tests and publication"
+}

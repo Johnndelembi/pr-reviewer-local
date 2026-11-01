@@ -1,0 +1,46 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "complete": {"type": "boolean"},
+    "summary": {"type": "string"},
+    "limitations": {"type": "string"},
+    "prior_finding_statuses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string"},
+          "status": {"type": "string", "enum": ["resolved", "unresolved", "unverified"]},
+          "evidence": {"type": "string"}
+        },
+        "required": ["id", "status", "evidence"]
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "severity": {"type": "string", "enum": ["Must fix", "Should fix", "Nice to have"]},
+          "file": {"type": "string"},
+          "line": {"type": "integer"},
+          "problem": {"type": "string"},
+          "fix": {"type": "string"},
+          "impact": {"type": "string"},
+          "origin": {"type": "string", "enum": ["original", "unresolved", "regression", "late_discovery"]},
+          "prior_finding_id": {"type": ["string", "null"]},
+          "origin_evidence": {"type": "string"},
+          "change_file": {"type": ["string", "null"]},
+          "change_line": {"type": ["integer", "null"]},
+          "change_side": {"type": ["string", "null"], "enum": ["head", "previous", null]}
+        },
+        "required": ["severity", "file", "line", "problem", "fix", "impact", "origin",
+                     "prior_finding_id", "origin_evidence", "change_file", "change_line", "change_side"]
+      }
+    }
+  },
+  "required": ["complete", "summary", "limitations", "findings", "prior_finding_statuses"]
+}

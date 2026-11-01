@@ -1,0 +1,15 @@
+config/
+data/
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+*.log
+*.lock
+state.json
+*-state.json
+last-*.json
+sms-notifications.json
+work/
+autofix-work/

@@ -1,0 +1,8 @@
+# Optional: the controller gets Docker-daemon access to launch isolated test jobs.
+# Use a dedicated runner host. This access is deliberately absent from compose.yaml.
+services:
+  reviewer:
+    group_add:
+      - ${DOCKER_GID:-0}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock

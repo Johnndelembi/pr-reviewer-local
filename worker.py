@@ -25,6 +25,18 @@ def initialize(args):
     config = json.loads((ROOT / "config.example.json").read_text())
     config.update(user=args.user, repositories=args.repo, model=args.model)
     config["ai"]["provider"] = args.provider
+    project = getattr(args, "project", None)
+    location = getattr(args, "location", None)
+    if args.provider == "vertex":
+        if not project:
+            raise ValueError("Vertex AI requires --project YOUR_GOOGLE_CLOUD_PROJECT_ID")
+        config["ai"].pop("api_key_env", None)
+        config["ai"]["project_id"] = project
+        config["ai"]["location"] = location or "global"
+    elif project or location:
+        raise ValueError("--project and --location are only used with --provider vertex")
+    if args.provider == "codex":
+        config["ai"].pop("api_key_env", None)
     if args.base_url:
         config["ai"]["base_url"] = args.base_url
     config["skill_files"] = [str(destination / "skills/review.md")]
@@ -35,6 +47,8 @@ def initialize(args):
     if not (skills / "review.md").exists():
         (skills / "review.md").write_text((ROOT / "skills/review.md").read_text())
     # Credentials belong in environment variables or secrets, never this public configuration.
+    from ai_runtime import provider_settings
+    provider_settings(config["ai"])
     path.write_text(json.dumps(config, indent=2) + "\n")
     path.chmod(0o600)
     print("Created configuration and default skill. Set credentials, edit repositories/models, then run doctor and check.")
@@ -65,12 +79,19 @@ def doctor(config):
         raise ValueError("Set GH_TOKEN or GH_TOKEN_FILE for the configured GitHub account")
     if key_name and not credential(key_name):
         raise ValueError(f"Set {key_name} or {key_name}_FILE")
+    if provider == "codex":
+        from codex_runtime import auth
+        if auth("auth-status"):
+            raise ValueError("Codex is signed out or login is unavailable. Run: docker compose run --rm auth login")
+    elif provider == "vertex":
+        from ai_runtime import vertex_access_token, vertex_credentials
+        vertex_access_token(vertex_credentials())
     print(json.dumps({"status": "ready", "user": config["user"], "repositories": config["repositories"],
                       "provider": provider, "base_url": endpoint, "model": config["model"],
                       "publish_reviews": bool(config.get("publish_reviews", False)),
                       "autofix": bool(config.get("autofix", {}).get("enabled")),
                       "validation": bool(config.get("validation", {}).get("enabled")),
-                      "note": "Local configuration check only; credentials and model capabilities are not verified remotely."}, indent=2))
+                      "note": "Provider credentials are checked; model access and tool-call support are not tested."}, indent=2))
 
 
 def main():
@@ -80,12 +101,18 @@ def main():
     init.add_argument("--config-dir", default="/config")
     init.add_argument("--user", required=True)
     init.add_argument("--repo", action="append", required=True)
-    init.add_argument("--provider", choices=("openai", "anthropic", "gemini", "openrouter", "ollama", "compatible"), default="openai")
+    init.add_argument("--provider", choices=("codex", "openai", "anthropic", "gemini", "vertex", "openrouter", "ollama", "compatible"), default="openai")
     init.add_argument("--model", required=True)
     init.add_argument("--base-url")
+    init.add_argument("--project", help="Google Cloud project ID for Vertex AI")
+    init.add_argument("--location", help="Vertex AI location (default: global)")
     sub.add_parser("doctor", help="Validate local configuration and credential presence; never sends tokens to the model")
     sub.add_parser("check", help="Discover requested PRs without AI calls or GitHub writes")
     sub.add_parser("serve", help="Poll continuously; publishing and auto-fixing require explicit configuration")
+    for name, help_text in [("login", "Sign in to Codex with a ChatGPT browser device code"),
+                            ("auth-status", "Show Codex login status without exposing credentials"),
+                            ("logout", "Clear this installation's Codex login")]:
+        sub.add_parser(name, help=help_text)
     for name in ("review", "autofix"):
         action = sub.add_parser(name, help="Run once; preview unless publishing is explicitly enabled")
         action.add_argument("--dry-run", action="store_true")
@@ -94,6 +121,9 @@ def main():
             action.add_argument("--limit", type=int, default=1)
     args = parser.parse_args()
     os.umask(0o077)
+    if args.command in ("login", "auth-status", "logout"):
+        from codex_runtime import auth
+        return auth(args.command)
     if args.command == "init":
         initialize(args)
         return 0
@@ -101,7 +131,7 @@ def main():
     data.mkdir(parents=True, exist_ok=True)
     config = load_config(data)
     if "ai" not in config:
-        raise ValueError("The Docker image requires ai configuration; Codex CLI authentication is supported only by the legacy local runner")
+        raise ValueError("Configure ai.provider; choose codex for ChatGPT browser login or an API provider")
     # gh understands GH_TOKEN; never persist a login or include credentials in process arguments.
     if not os.environ.get("GH_TOKEN"):
         from ai_runtime import credential

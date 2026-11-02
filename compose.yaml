@@ -1,6 +1,20 @@
 services:
+  auth:
+    image: ${REVIEWER_IMAGE:-johnndelembi/pr-reviewer-local:0.2.0}
+    profiles: [auth]
+    command: [login]
+    read_only: true
+    user: ${REVIEWER_UID:-1000}:${REVIEWER_GID:-1000}
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      CODEX_HOME: /codex/${REVIEWER_UID:-1000}
+    volumes:
+      - codex-login:/codex
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=64m,mode=1777
   setup:
-    image: ${REVIEWER_IMAGE:-johnndelembi/pr-reviewer-local:0.1.2}
+    image: ${REVIEWER_IMAGE:-johnndelembi/pr-reviewer-local:0.2.0}
     profiles: [setup]
     command: [init]
     network_mode: none
@@ -11,7 +25,7 @@ services:
     volumes:
       - ./config:/config
   reviewer:
-    image: ${REVIEWER_IMAGE:-johnndelembi/pr-reviewer-local:0.1.2}
+    image: ${REVIEWER_IMAGE:-johnndelembi/pr-reviewer-local:0.2.0}
     build: .
     init: true
     restart: unless-stopped
@@ -25,9 +39,12 @@ services:
     environment:
       GH_TOKEN: ${GH_TOKEN:-}
       AI_API_KEY: ${AI_API_KEY:-}
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-/data/google-application-default-credentials.json}
+      CODEX_HOME: /codex/${REVIEWER_UID:-1000}
     volumes:
       - ./config:/config:ro
       - ./data:/data
+      - codex-login:/codex
     tmpfs:
       - /tmp:rw,nosuid,nodev,size=256m,mode=1777
     extra_hosts:
@@ -35,3 +52,6 @@ services:
     logging:
       driver: json-file
       options: {max-size: 2m, max-file: "3"}
+
+volumes:
+  codex-login:

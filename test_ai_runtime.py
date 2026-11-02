@@ -71,6 +71,34 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(output["tool_use_id"], "read")
         self.assertIn("answer = 42", output["content"])
 
+    def test_vertex_uses_google_cloud_adc_access_token(self):
+        self.config["ai"] = {"provider": "vertex", "project_id": "my-google-project", "location": "global"}
+        replies = [response("read_file", {"path": "head/source.py"}), response("finish", RESULT, "final")]
+        with patch.object(ai, "vertex_credentials", return_value=object()) as credentials, \
+                patch.object(ai, "vertex_access_token", side_effect=["access-token-1", "access-token-2"]) as access_token, \
+                patch.object(ai, "request_json", side_effect=replies) as request:
+            self.assertEqual(ai.run_agent(self.config, "Review", SCHEMA, self.root), RESULT)
+        credentials.assert_called_once_with()
+        self.assertEqual(access_token.call_count, 2)
+        calls = request.call_args_list
+        self.assertEqual(calls[0].args[0], "https://aiplatform.googleapis.com/v1/projects/my-google-project/locations/global/endpoints/openapi/chat/completions")
+        self.assertEqual([call.args[1]["Authorization"] for call in calls],
+                         ["Bearer access-token-1", "Bearer access-token-2"])
+
+    def test_vertex_access_token_refreshes_expired_adc(self):
+        class Credentials:
+            valid = False
+            token = None
+            def refresh(self, request):
+                self.token = "fresh-access-token"
+        credentials = Credentials()
+        with patch("google.auth.transport.requests.Request") as request:
+            self.assertEqual(ai.vertex_access_token(credentials), "fresh-access-token")
+        credentials.valid = True
+        with patch("google.auth.transport.requests.Request") as request:
+            self.assertEqual(ai.vertex_access_token(credentials), "fresh-access-token")
+            request.assert_not_called()
+
     def test_invalid_or_truncated_output_cannot_be_accepted(self):
         for reply in (response("finish", {"complete": True}), {"choices": [{"finish_reason": "length"}]}):
             with self.subTest(reply=reply), patch.object(ai, "request_json", return_value=reply):

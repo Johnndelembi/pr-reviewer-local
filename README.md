@@ -13,14 +13,14 @@ Download the installation files from the public release:
 ```sh
 mkdir pr-reviewer-local
 cd pr-reviewer-local
-curl -fsSLO https://raw.githubusercontent.com/Johnndelembi/pr-reviewer-local/v0.1.2/compose.yaml
-curl -fsSLO https://raw.githubusercontent.com/Johnndelembi/pr-reviewer-local/v0.1.2/.env.example
+curl -fsSLO https://raw.githubusercontent.com/Johnndelembi/pr-reviewer-local/v0.2.0/compose.yaml
+curl -fsSLO https://raw.githubusercontent.com/Johnndelembi/pr-reviewer-local/v0.2.0/.env.example
 cp .env.example .env
 mkdir -p config data
 docker compose pull
 ```
 
-The image is `johnndelembi/pr-reviewer-local:0.1.2`. Source code is not needed to run it. For a local source build, run `docker build -t pr-reviewer:local .` in the source directory and set `REVIEWER_IMAGE=pr-reviewer:local` in `.env` before using Compose.
+The image is `johnndelembi/pr-reviewer-local:0.2.0`. Source code is not needed to run it. For a local source build, run `docker build -t pr-reviewer:local .` in the source directory and set `REVIEWER_IMAGE=pr-reviewer:local` in `.env` before using Compose.
 
 Initialize your configuration (substitute your GitHub user and repositories):
 
@@ -29,7 +29,7 @@ docker compose run --rm setup init \
   --user YOUR_GITHUB_USERNAME \
   --repo your-org/your-repo \
   --repo your-org/another-repo \
-  --provider openai \
+  --provider codex \
   --model gpt-6.1-sol
 ```
 
@@ -37,12 +37,49 @@ The one-off `setup` service has a writable `/config` mount and no network. The r
 
 On Linux, if your user is not UID/GID 1000, set `REVIEWER_UID` and `REVIEWER_GID` in `.env` to the results of `id -u` and `id -g` before initialization. Keep the bind-mounted `config/` and `data/` directories owned by that user. macOS Docker Desktop usually maps bind-mount permissions automatically.
 
-Put credentials in `.env`:
+Choose how to connect your AI account:
+
+**ChatGPT browser sign-in (no AI API key):** the `--provider codex` example above uses the bundled Codex CLI. Run:
+
+```sh
+docker compose run --rm auth login
+```
+
+The terminal prints a URL and a one-time code. Open that URL in your own browser, sign in to your ChatGPT account, and enter the code. If needed, enable device-code login in your ChatGPT security settings or workspace permissions. No browser runs inside the container and no callback port is exposed. Account/workspace access, model availability and Codex usage limits apply; unattended API-key automation remains OpenAI's recommended default. See [official Codex authentication guidance](https://learn.chatgpt.com/docs/auth#login-on-headless-devices).
+
+Check or clear this installation's login:
+
+```sh
+docker compose run --rm auth auth-status
+docker compose run --rm auth logout
+```
+
+The private `codex-login` Docker volume persists the session and refreshed tokens across container restarts and image upgrades. Never share it or add it to an image. `docker compose down` preserves it; `docker compose down -v` deletes it and requires signing in again. Stop the reviewer before logout or account changes. Changing `REVIEWER_UID` changes the session directory and requires another login. The auth service receives no GitHub or provider keys and needs no existing reviewer configuration.
+
+If a review reports an authentication failure, stop the reviewer, run `docker compose run --rm auth auth-status`, then sign in again with `docker compose run --rm auth login`. If Codex is still holding a stale session, run `docker compose run --rm auth logout` first. Confirm the session with `docker compose run --rm reviewer doctor`, then restart the reviewer.
+
+**AI API key:** initialize with `--provider openai` (or another supported API provider) instead, then put that provider's key in `.env` as `AI_API_KEY`. Browser login is unnecessary for this mode. For existing configurations, edit `ai.provider` and `model` instead of rerunning `init`.
+
+**Gemini API key:** choose `--provider gemini` and put a Gemini Developer API key in `AI_API_KEY`. This connects to Google's Gemini API directly.
+
+**Google account through Vertex AI:** for Google account authentication, use Google Cloud Application Default Credentials (ADC). Enable the Vertex AI API on your Google Cloud project, sign in on a trusted machine, then copy the ADC file into the private `data/` directory:
+
+```sh
+gcloud config set project YOUR_GOOGLE_CLOUD_PROJECT
+gcloud services enable aiplatform.googleapis.com
+gcloud auth application-default login
+install -m 600 "$HOME/.config/gcloud/application_default_credentials.json" data/google-application-default-credentials.json
+```
+
+Initialize with `--provider vertex --project YOUR_GOOGLE_CLOUD_PROJECT --location global --model google/gemini-3.5-flash`. Pick a model currently available to your project and location. In headless setups, `gcloud auth application-default login --no-launch-browser` prints a URL and prompts for the code from a trusted browser. The ADC file contains refresh credentials, so protect it like a password and never commit or share it. `data/` is private and git-ignored. Vertex requests use Google Cloud billing, IAM and quota for the selected project. See [Google's ADC login guide](https://docs.cloud.google.com/sdk/gcloud/reference/auth/application-default/login) and [Vertex AI's OpenAI-compatible API guide](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/start/openai).
+
+Every provider mode needs separate GitHub access. Open `.env` and configure:
 
 ```dotenv
 GH_TOKEN=your-scoped-github-token
-AI_API_KEY=your-selected-provider-api-key
-REVIEWER_IMAGE=johnndelembi/pr-reviewer-local:0.1.2
+# Only needed for an API provider; leave blank for Codex browser sign-in.
+AI_API_KEY=
+REVIEWER_IMAGE=johnndelembi/pr-reviewer-local:0.2.0
 ```
 
 Keep `.env` private and out of Git (`chmod 600 .env` on Unix). The GitHub token must belong to the configured `user`. Use a fine-grained personal access token limited to the repositories in the allowlist, with metadata/contents read access, pull requests read/write for reviews, and issue-comment read access. Auto-fix additionally needs contents write and issue-comment write. Organization policies may require token approval. GitHub App installation tokens and enterprise hosts are not supported in this version.
@@ -54,7 +91,7 @@ docker compose run --rm reviewer doctor
 docker compose run --rm reviewer check
 ```
 
-`doctor` checks configuration and credential presence locally; it does not verify the key remotely. `check` discovers PRs without AI calls or GitHub writes. Eligible PRs must be open, non-draft, authored by someone else, and directly request review from the configured user. Team-only requests are not discovered. Once reviewed, PRs are watched for new commits until they close.
+`doctor` checks configuration and credential presence, Codex login status, and refreshes Vertex ADC without sending a model request. It does not verify model access or API-key permissions. `check` discovers PRs without AI calls or GitHub writes. Eligible PRs must be open, non-draft, authored by someone else, and directly request review from the configured user. Team-only requests are not discovered. Once reviewed, PRs are watched for new commits until they close.
 
 Preview a discovered PR (uses your selected provider, but does not post):
 
@@ -73,18 +110,24 @@ With `publish_reviews=false`, the service performs discovery only. A manual `rev
 
 ## Providers and models
 
-The image uses API credentials and bounded file tools; it does not require a Codex CLI installation or reuse a ChatGPT subscription login. Your original local Codex runner remains separate. API usage is billed according to the selected provider.
+Choose one provider during setup. The main account options are ChatGPT through Codex sign-in, Google Gemini through either an API key or Google Cloud Vertex AI ADC, and Anthropic through an API key. Codex CLI 0.114.0 is pinned for its verified local MCP transport and bundled for Linux AMD64 and ARM64 from integrity-checked official packages; no host CLI installation is required. Browser mode uses your own ChatGPT account through Codex, with the restricted file tools exposed through a local stdio MCP server. The original desktop runner remains separate.
 
-Set `ai.provider` and top-level `model` in `config/config.json`. Every provider uses `AI_API_KEY` with the generated configuration; `ai.api_key_env` can name another variable for direct Docker deployments. Select a model that supports function/tool calling and can handle your source context.
+Set `ai.provider` and top-level `model` in `config/config.json`. API providers use `AI_API_KEY` with the generated configuration; `ai.api_key_env` can name another variable for direct Docker deployments. Select a model that supports function/tool calling and can handle your source context.
 
 | `ai.provider` | Default endpoint | Authentication / model |
 | --- | --- | --- |
+| `codex` | Bundled Codex CLI / ChatGPT | Browser device-code login; no AI API key |
 | `openai` | `https://api.openai.com/v1` | OpenAI API key, exact OpenAI model ID |
 | `anthropic` | `https://api.anthropic.com/v1` | Anthropic API key, exact Claude model ID; native Messages API |
-| `gemini` | `https://generativelanguage.googleapis.com/v1beta/openai` | Gemini API key, exact Gemini model ID |
+| `gemini` | `https://generativelanguage.googleapis.com/v1beta/openai` | Gemini Developer API key, exact Gemini model ID |
+| `vertex` | Google Cloud Vertex AI OpenAI-compatible endpoint | Google Cloud ADC user login, project ID and location; model ID such as `google/gemini-3.5-flash` |
 | `openrouter` | `https://openrouter.ai/api/v1` | OpenRouter API key and provider/model ID |
 | `ollama` | `http://host.docker.internal:11434/v1` | Set `ai.api_key_env` to `""`; choose an installed tool-capable model |
 | `compatible` | Set `ai.base_url` explicitly | OpenAI Chat Completions-compatible gateway with tool calling |
+
+For Vertex AI, set `ai.provider` to `"vertex"`, add `ai.project_id` and `ai.location`, and remove `ai.api_key_env` and `ai.base_url`. For ChatGPT browser mode, set `ai.provider` to `"codex"`, remove `ai.api_key_env` and `ai.base_url`, choose a Codex model available to your account, and run the login command. Existing repository and skill settings remain in place.
+
+Codex browser mode uses a conservative 64,000-token text-only model profile and disables built-in patch/image access. Select an exact model ID available to your account; the model ID is never substituted.
 
 The compatibility providers use `/chat/completions`; this is distinct from the original Codex CLI's Responses API provider configuration. Anthropic uses `/messages`. Model availability and feature support are provider-specific. There is no silent model fallback: provider errors, malformed output and budget exhaustion cannot become automatic approvals.
 
@@ -117,7 +160,7 @@ For Ollama, make its server reachable from Docker and set:
 
 `host.docker.internal` is mapped to the Docker host in Compose. Local servers must listen on an interface reachable from containers; Docker Desktop/host firewall configuration varies. For a remote private HTTP gateway, explicitly set `ai.allow_insecure_http=true`; use HTTPS for remote credentials. URLs with embedded credentials, query strings or fragments are rejected. Provider redirects are not followed.
 
-`reasoning` is sent only to OpenAI; use a value supported by your selected model, or `null` to omit it. `ai.max_turns` (maximum 200), `ai.max_tokens` (maximum 32,000), request timeouts and the total job timeout bound each attempt. Large PRs can exhaust context or budgets and will be deferred rather than approved.
+`reasoning` is sent only to OpenAI; use a value supported by your selected model, or `null` to omit it. `ai.max_turns` (maximum 200), `ai.max_tokens` (maximum 32,000), request timeouts and the total job timeout bound API attempts. Codex mode maps `ai.max_turns` to a maximum file-tool call count and uses `ai.job_timeout_seconds` for the total deadline; API request/token settings do not apply to the CLI backend. Large PRs can exhaust context or budgets and will be deferred rather than approved.
 
 ### Docker secrets
 
@@ -203,23 +246,37 @@ To publish manually to Docker Hub:
 
 ```sh
 docker login
-make publish REGISTRY_IMAGE=johnndelembi/pr-reviewer-local VERSION=0.1.2
+make publish REGISTRY_IMAGE=johnndelembi/pr-reviewer-local VERSION=0.2.0
 ```
 
 To use GHCR or another registry, log in to that registry and pass its image name through `REGISTRY_IMAGE`.
 
 `make publish` builds and pushes Linux AMD64 and ARM64 manifests. Buildx/QEMU support must be available. The `Dockerfile` copies only explicit runtime files, includes the MIT license and runs as a non-root user. Build context and Git ignore rules exclude installation secrets and runtime state. Python dependencies are pinned, but base images and OS packages are not a fully reproducible lock; use release image digests when deploying a published build.
 
-The included GitHub Actions workflow tests PRs and `main`, then publishes to Docker Hub when you push a version tag such as `v0.1.2`. For automated publication, create the repository secret `DOCKERHUB_TOKEN` with a Docker Hub access token limited to image pushes. Set repository variable `DOCKERHUB_USERNAME` to your Docker Hub username; optionally set `DOCKERHUB_IMAGE` to `namespace/repository`. It defaults to the lowercase GitHub owner/repository. GitHub Actions must be available on the account. Manual `make publish` runs locally and does not depend on Actions.
+The included GitHub Actions workflow tests PRs and `main`, then publishes to Docker Hub when you push a version tag such as `v0.2.0`. For automated publication, create the repository secret `DOCKERHUB_TOKEN` with a Docker Hub access token limited to image pushes. Set repository variable `DOCKERHUB_USERNAME` to your Docker Hub username; optionally set `DOCKERHUB_IMAGE` to `namespace/repository`. It defaults to the lowercase GitHub owner/repository. GitHub Actions must be available on the account. Manual `make publish` runs locally and does not depend on Actions.
 
-After release, distribute `compose.yaml`, `.env.example` and this guide. Consumers can pull the image, run `init`, configure their own account/provider/skills, preview and enable it. Back up `config/` and `data/`; upgrades replace the image, not those directories. Keep version tags or digests pinned when upgrading. External services and live provider/model capability still need verification in each installation.
+After release, distribute `compose.yaml`, `.env.example` and this guide. Consumers can pull the image, run `init`, configure their own account/provider/skills, preview and enable it. Back up `config/` and `data/`, and keep the private login volume if using Codex; upgrades replace the image, not those directories. Keep version tags or digests pinned when upgrading. External services and live provider/model capability still need verification in each installation.
 
 ## Architecture and boundaries
 
-GitHub discovery, downloads, validation, state and posting remain in the deterministic controller. The API agent gets only paginated file reads, literal searches, a final schema-validated result, and—only for auto-fix—bounded writes/deletions below `head/`. It has no shell, code execution, arbitrary HTTP, credentials or GitHub tools. Path traversal, symlinks and agent metadata are blocked. PR instructions cannot add tools or change the allowlist.
+GitHub discovery, downloads, validation, state and posting remain in the deterministic controller. The agent gets only paginated file reads, literal searches, a final schema-validated result, and—only for auto-fix—bounded writes/deletions below `head/`. It has no shell, code execution, arbitrary HTTP, credentials or GitHub tools. Path traversal, symlinks and agent metadata are blocked. PR instructions cannot add tools or change the allowlist.
 
-Downloaded source is sent to the AI provider you configure as needed for review. Choose a provider appropriate for your repository confidentiality requirements. A successful build or synthetic protocol test does not establish review quality for every model; use a real dry run before enabling posting.
+Downloaded source is sent to Codex or the AI provider you configure as needed for review. Choose a provider appropriate for your repository confidentiality requirements. A successful build or synthetic protocol test does not establish review quality for every model; use a real dry run before enabling posting.
 
 License: MIT.
 
-Implementation references: [OpenAI function calling](https://developers.openai.com/api/docs/guides/function-calling), [Claude custom tools](https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools), [Gemini OpenAI compatibility](https://ai.google.dev/gemini-api/docs/openai), [Docker multi-platform builds](https://docs.docker.com/build/ci/github-actions/multi-platform/).
+Google account login here uses official Google Cloud ADC credentials for Vertex AI. It does not reuse Gemini CLI OAuth. Google's [Gemini CLI policy](https://github.com/google-gemini/gemini-cli/blob/main/docs/resources/faq.md) warns against using its OAuth credentials to access Gemini services from third-party software.
+
+Implementation references: [OpenAI function calling](https://developers.openai.com/api/docs/guides/function-calling), [Claude custom tools](https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools), [Gemini OpenAI compatibility](https://ai.google.dev/gemini-api/docs/openai), [Vertex AI OpenAI compatibility](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/start/openai), [Docker multi-platform builds](https://docs.docker.com/build/ci/github-actions/multi-platform/).
+
+## Upgrade from 0.1.2
+
+Stop the service, download the new Compose file, and set `REVIEWER_IMAGE=johnndelembi/pr-reviewer-local:0.2.0` in your existing `.env`. Keep `config/` and `data/`:
+
+```sh
+docker compose down
+curl -fsSLO https://raw.githubusercontent.com/Johnndelembi/pr-reviewer-local/v0.2.0/compose.yaml
+docker compose pull
+```
+
+API configurations keep working. For browser mode, edit `config/config.json` as described above, run `docker compose run --rm auth login`, then `docker compose run --rm reviewer doctor`. Preview a review before enabling publication. Start with `docker compose up -d --no-build`. Do not rerun `init` over an existing installation.

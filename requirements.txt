@@ -1,4 +1,16 @@
 jsonschema==4.25.1
+google-auth==2.62.0
+requests==2.34.2
+charset-normalizer==3.5.2
+idna==3.20
+urllib3==2.8.0
+certifi==2026.10.23
+cryptography==50.0.2
+cffi==2.1.1
+pycparser==3.12
+pyasn1-modules==0.4.2
+pyasn1==0.6.5
+rsa==4.9.1
 attrs==26.1.0
 jsonschema-specifications==2025.9.1
 referencing==0.37.0

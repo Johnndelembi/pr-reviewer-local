@@ -3,6 +3,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import re
 import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
@@ -15,6 +16,7 @@ PROVIDERS = {
     "openai": ("https://api.openai.com/v1", "OPENAI_API_KEY"),
     "anthropic": ("https://api.anthropic.com/v1", "ANTHROPIC_API_KEY"),
     "gemini": ("https://generativelanguage.googleapis.com/v1beta/openai", "GEMINI_API_KEY"),
+    "vertex": ("", ""),
     "openrouter": ("https://openrouter.ai/api/v1", "OPENROUTER_API_KEY"),
     "ollama": ("http://host.docker.internal:11434/v1", ""),
     "compatible": ("", "AI_API_KEY"),
@@ -34,8 +36,22 @@ def credential(name):
 
 def provider_settings(settings):
     provider = settings.get("provider", "openai")
+    if provider == "codex":
+        if settings.get("base_url") or settings.get("api_key_env"):
+            raise ValueError("Codex browser login does not use base_url or api_key_env; remove those settings")
+        return provider, "ChatGPT / Codex CLI", ""
     if provider not in PROVIDERS:
         raise ValueError("Unknown AI provider; choose " + ", ".join(PROVIDERS))
+    if provider == "vertex":
+        if settings.get("base_url") or settings.get("api_key_env"):
+            raise ValueError("Vertex AI uses Google Cloud ADC; remove base_url and api_key_env")
+        project = settings.get("project_id", "")
+        location = settings.get("location", "global")
+        if not isinstance(project, str) or not re.fullmatch(r"[a-z][a-z0-9-]{4,28}[a-z0-9]", project):
+            raise ValueError("Vertex AI requires a valid 6–30 character lowercase Google Cloud project_id")
+        if not isinstance(location, str) or not re.fullmatch(r"[a-z][a-z0-9-]{0,62}[a-z0-9]", location):
+            raise ValueError("Vertex AI location must be a lowercase Google Cloud region such as global or us-central1")
+        return provider, f"https://aiplatform.googleapis.com/v1/projects/{project}/locations/{location}/endpoints/openapi", ""
     default_url, default_key = PROVIDERS[provider]
     base_url = settings.get("base_url", default_url).rstrip("/")
     parts = urlsplit(base_url)
@@ -46,6 +62,33 @@ def provider_settings(settings):
             and not settings.get("allow_insecure_http", False)):
         raise ValueError("Remote plaintext HTTP requires explicit ai.allow_insecure_http=true")
     return provider, base_url, settings.get("api_key_env", default_key)
+
+
+def vertex_credentials():
+    """Load Application Default Credentials for Google Cloud Vertex AI."""
+    try:
+        import google.auth
+        return google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])[0]
+    except Exception:
+        raise RuntimeError(
+            "Google Cloud ADC is unavailable. Run 'gcloud auth application-default login' and "
+            "place application_default_credentials.json at the configured GOOGLE_APPLICATION_CREDENTIALS path."
+        ) from None
+
+
+def vertex_access_token(credentials):
+    """Refresh the ADC access token when needed; never log or persist it."""
+    try:
+        from google.auth.transport.requests import Request as GoogleRequest
+        if not credentials.valid:
+            credentials.refresh(GoogleRequest())
+        if not credentials.token:
+            raise RuntimeError
+        return credentials.token
+    except Exception:
+        raise RuntimeError(
+            "Google Cloud ADC could not refresh. Run 'gcloud auth application-default login' again and replace the ADC file."
+        ) from None
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -201,6 +244,11 @@ class Workspace:
 def run_agent(config, prompt, schema, workspace, *, writable=None, model=None, reasoning=None):
     settings = config["ai"]
     provider, base_url, key_name = provider_settings(settings)
+    if provider == "codex":
+        from codex_runtime import run_agent as run_codex
+        return run_codex(config, prompt, schema, workspace, writable=writable,
+                         model=model, reasoning=reasoning if model else config.get("reasoning"))
+    google_credentials = vertex_credentials() if provider == "vertex" else None
     key = credential(key_name)
     if key_name and not key:
         raise ValueError(f"Missing AI credential: {key_name} or {key_name}_FILE")
@@ -245,7 +293,8 @@ def run_agent(config, prompt, schema, workspace, *, writable=None, model=None, r
             payload["max_completion_tokens" if provider == "openai" else "max_tokens"] = max_tokens
             if provider == "openai" and reasoning:
                 payload["reasoning_effort"] = reasoning
-            response = request_json(base_url + "/chat/completions", {"Authorization": "Bearer " + key} if key else {},
+            bearer = vertex_access_token(google_credentials) if provider == "vertex" else key
+            response = request_json(base_url + "/chat/completions", {"Authorization": "Bearer " + bearer} if bearer else {},
                                     payload, timeout)
             choice = response["choices"][0]
             if choice.get("finish_reason") in ("length", "content_filter"):

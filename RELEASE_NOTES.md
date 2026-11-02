@@ -1,17 +1,11 @@
-# 0.1.2 — portable Docker distribution
+# 0.2.0 — Account-based provider setup
 
-The reviewer can now run independently of the original Mac installation. Repositories, skills, AI provider/model, schedule, signatures and optional integrations are configured per installation. Configuration and review state live outside the image.
+Adds `--provider codex` using bundled official Codex CLI 0.114.0. Users can sign into their own ChatGPT account with a browser device code, without an AI API key. The `auth` Compose service provides `login`, `auth-status`, and `logout`; a private named volume preserves sessions and refreshed credentials across restarts and upgrades. GitHub access remains separately configured.
 
-The image uses a new API-backed agent with bounded file tools rather than bundling the personal Codex login. It supports OpenAI, native Anthropic Messages, Gemini's OpenAI-compatible endpoint, OpenRouter, tool-capable Ollama models and compatible Chat Completions gateways. Operator-selected skills are embedded in the prompt. The model has no shell, credential access or arbitrary network tool; auto-fix gets writes only below the captured head source.
+Adds `--provider vertex` for Google Cloud Vertex AI through Application Default Credentials (ADC), alongside the existing `--provider gemini` Gemini Developer API key mode. Vertex uses the project's Google Cloud IAM, billing and quota; the private ADC file is mounted from `data/`. It does not reuse Gemini CLI OAuth. Anthropic API-key setup remains available with `--provider anthropic`.
 
-The existing GitHub allowlist, revision freshness checks, consolidated finding policy, companion source, finding-resolution notices, trusted ordinary-comment handling and guarded auto-fix controller are retained. Default installation only discovers PRs; posting and fixing require explicit opt-in. Build/test execution is an optional dedicated-runner configuration, with archive streaming that works when the controller is containerized.
+Codex uses the existing bounded file tools through a local stdio MCP server. Shell, browser, apps, hooks, image tools and subagents are disabled; untrusted repository configuration is never loaded. GitHub, API-provider and Notify credentials are excluded from the CLI environment. Review results are schema-validated and subprocess failures cannot become clean approvals. Auto-fix writes remain restricted to `head/`.
 
-Installation provides a network-free setup service, configuration doctor, preview commands, persistent state and Compose controls. Publication provides a multi-platform Docker Hub release workflow and manual registry commands. The default skill is original generic guidance; personal or paid plugin skills and credentials are excluded. Source is distributed under the included MIT license.
+Existing API providers and configurations remain supported. Posting and auto-fix still require explicit opt-in. The README includes provider setup, credential handling and upgrade steps. Official Linux binaries are pinned and verified against package SHA-512 integrity values during the multi-platform Docker build.
 
-Verified: 283 tests in Linux ARM64, synthetic HTTP review/fix tool roundtrips, real disposable Docker validation stages with cleanup, fresh setup/doctor, state persistence across containers, Compose parsing and non-root/private-state exclusion checks. See release-checks.json for the local image ID.
-
-Debian package downloads use HTTPS with bounded retries during source builds.
-
-Publication targets `docker.io/johnndelembi/pr-reviewer-local`. This release updates the install files from the initial unpublished GHCR target. Publication is performed locally because GitHub Actions was blocked by an account billing lock. The workflow supports future Docker Hub releases after account access and `DOCKERHUB_TOKEN` are configured.
-
-Live GitHub PR reviews/fixes and paid-provider account calls were not performed. `release-checks.json` records the original local verification snapshot; the GitHub release records subsequent platform and publication results. The running desktop reviewer remains separate from this distribution.
+The running desktop reviewer is unaffected. Docker test builds exercise the provider configuration and Codex runtime without making live GitHub or AI model requests. Run `reviewer doctor` and a dry-run review after configuring an account to verify its live access.

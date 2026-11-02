@@ -1,5 +1,5 @@
 IMAGE ?= pr-reviewer:local
-VERSION ?= 0.1.2
+VERSION ?= 0.2.0
 
 .PHONY: build test check logs up down runner-images publish
 build:

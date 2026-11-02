@@ -10,9 +10,13 @@
 !LICENSE
 !skills/
 !skills/**
+!licenses/
+!licenses/**
 **/__pycache__
 **/.env*
 **/config.json
 **/auth.json
 **/*.log
 **/.git
+
+!codex-model-template.json

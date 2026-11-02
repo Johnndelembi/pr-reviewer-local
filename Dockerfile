@@ -1,4 +1,9 @@
 ARG PYTHON_IMAGE=python:3.12-slim-trixie
+FROM --platform=$BUILDPLATFORM ${PYTHON_IMAGE} AS codex-binary
+ARG TARGETARCH
+COPY install_codex.py /install_codex.py
+RUN python3 /install_codex.py "$TARGETARCH" /codex-runtime
+
 FROM ${PYTHON_IMAGE} AS runtime
 # Use HTTPS with bounded retries for public package downloads.
 RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources \
@@ -9,16 +14,20 @@ RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.l
     && mkdir /app /data /config \
     && chown reviewer:reviewer /data /config
 WORKDIR /app
+RUN mkdir /codex && chmod 1777 /codex
+COPY --from=codex-binary /codex-runtime/ /opt/codex/
+ENV PATH="/opt/codex/bin:${PATH}"
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 # Explicit files prevent tokens, personal state, workspaces and logs entering image layers.
 COPY reviewer.py autofixer.py review_policy.py build_checks.py check_sandbox.py \
      companion_context.py submodule_context.py validation_plan.py sms_notifier.py \
-     runtime_config.py ai_runtime.py worker.py ./
-COPY review-prompt.md review-schema.json autofix-prompt.md autofix-schema.json config.example.json LICENSE ./
+     runtime_config.py ai_runtime.py codex_runtime.py worker.py ./
+COPY review-prompt.md review-schema.json autofix-prompt.md autofix-schema.json config.example.json codex-model-template.json LICENSE ./
 COPY skills/ ./skills/
+COPY licenses/ ./licenses/
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
-    REVIEWER_CONFIG=/config/config.json REVIEWER_DATA_DIR=/data \
+    REVIEWER_CONFIG=/config/config.json REVIEWER_DATA_DIR=/data CODEX_HOME=/codex/1000 \
     HOME=/home/reviewer GH_CONFIG_DIR=/tmp/gh GH_PROMPT_DISABLED=1 GH_NO_UPDATE_NOTIFIER=1 GIT_TERMINAL_PROMPT=0
 USER 1000:1000
 ENTRYPOINT ["python3", "-B", "/app/worker.py"]
@@ -26,10 +35,10 @@ CMD ["serve"]
 
 FROM runtime AS test
 COPY test_*.py ./
-RUN env -u REVIEWER_CONFIG -u REVIEWER_DATA_DIR python3 -B -m unittest discover -q
+RUN codex --version && env -u REVIEWER_CONFIG -u REVIEWER_DATA_DIR python3 -B -m unittest discover -q
 
 FROM runtime AS release
-ARG VERSION=0.1.2
+ARG VERSION=0.2.0
 LABEL org.opencontainers.image.title="PR Reviewer" \
       org.opencontainers.image.description="Configurable GitHub PR reviews with bounded AI file tools" \
       org.opencontainers.image.version="${VERSION}" \

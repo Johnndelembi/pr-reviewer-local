@@ -72,6 +72,18 @@ class PortableTests(unittest.TestCase):
             with self.subTest(url=url), self.assertRaises(ValueError):
                 ai_runtime.provider_settings({"provider": "compatible", "base_url": url})
 
+    def test_vertex_provider_requires_valid_project_and_uses_google_endpoint(self):
+        settings = {"provider": "vertex", "project_id": "my-google-project", "location": "us-central1"}
+        provider, endpoint, key = ai_runtime.provider_settings(settings)
+        self.assertEqual(provider, "vertex")
+        self.assertEqual(endpoint, "https://aiplatform.googleapis.com/v1/projects/my-google-project/locations/us-central1/endpoints/openapi")
+        self.assertEqual(key, "")
+        for invalid in ({"provider": "vertex"}, {"provider": "vertex", "project_id": "Bad Project"},
+                        {"provider": "vertex", "project_id": "valid-project", "base_url": "https://example.com"},
+                        {"provider": "vertex", "project_id": "valid-project", "api_key_env": "AI_API_KEY"}):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                ai_runtime.provider_settings(invalid)
+
     def test_init_does_not_overwrite_an_installation_or_add_credentials(self):
         with tempfile.TemporaryDirectory() as directory:
             args = type("Args", (), {"config_dir": directory, "user": "reviewer", "repo": ["owner/repo"],

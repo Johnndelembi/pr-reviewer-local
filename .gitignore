@@ -13,3 +13,6 @@ last-*.json
 sms-notifications.json
 work/
 autofix-work/
+codex-home/
+.codex/
+auth.json
